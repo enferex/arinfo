@@ -1,7 +1,9 @@
 #include <ar.h>
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <openssl/md5.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -18,7 +20,7 @@ typedef struct _hdr_list_t {
 } hdr_list_t;
 
 static _Noreturn void usage(const char *execname) {
-  printf("Usage: %s [archive file]\n", execname);
+  printf("Usage: %s [-h] [-p] [archive file]\n", execname);
   exit(EXIT_SUCCESS);
 }
 
@@ -54,9 +56,8 @@ static void reverse_list(hdr_list_t **list) {
   *list = prev;
 }
 
-static void print(int flags, const char *fname, const hdr_list_t *hdr) {
-  if (flags & FLAG_PRINT_HEADER)
-    printf("file,object,date,uid,gid,mode,size,md5\n");
+static void print(bool print_header, const char *fname, const hdr_list_t *hdr) {
+  if (print_header) printf("file,object,date,uid,gid,mode,size,md5\n");
   for (const hdr_list_t *node = hdr; node; node = node->next) {
     printf("%s,%s,%s,%s,%s,%s,%s,", fname, node->hdr.ar_name, node->hdr.ar_date,
            node->hdr.ar_uid, node->hdr.ar_gid, node->hdr.ar_mode,
@@ -72,6 +73,28 @@ static long file_size(FILE *fp) {
   const long end = ftell(fp);
   fseek(fp, cur, SEEK_SET);
   return end;
+}
+
+static void sanitize_string(char *str, size_t max) {
+  assert(str && "Invalid input.");
+  size_t i = 0;
+  while (i < max) {
+    if (str[i] == 0)
+      break;
+    else if (!isprint(str[i]))
+      str[i] = '?';
+    ++i;
+  }
+}
+
+static void sanitize(struct ar_hdr *hdr) {
+  assert(hdr && "Invalid input.");
+  sanitize_string(hdr->ar_name, sizeof(hdr->ar_name));
+  sanitize_string(hdr->ar_date, sizeof(hdr->ar_date));
+  sanitize_string(hdr->ar_uid, sizeof(hdr->ar_uid));
+  sanitize_string(hdr->ar_gid, sizeof(hdr->ar_gid));
+  sanitize_string(hdr->ar_mode, sizeof(hdr->ar_mode));
+  sanitize_string(hdr->ar_size, sizeof(hdr->ar_size));
 }
 
 static hdr_list_t *parse(FILE *fp, int flags, long *bytes_to_end) {
@@ -102,6 +125,7 @@ static hdr_list_t *parse(FILE *fp, int flags, long *bytes_to_end) {
     hdr.ar_gid[sizeof(hdr.ar_gid) - 1] = '\0';
     hdr.ar_mode[sizeof(hdr.ar_mode) - 1] = '\0';
     hdr.ar_size[sizeof(hdr.ar_size) - 1] = '\0';
+    sanitize(&hdr);
     const long size = atol(hdr.ar_size);
     hdr_list_t *hdrp = calloc(1, sizeof(hdr_list_t));
     if (!hdrp) {
@@ -122,32 +146,36 @@ static hdr_list_t *parse(FILE *fp, int flags, long *bytes_to_end) {
 int main(int argc, char **argv) {
   int opt, flags = 0;
   const char *fname = NULL;
+  if (argc == 1) usage(argv[0]);
   while ((opt = getopt(argc, argv, "hp")) != -1) {
     switch (opt) {
       case 'h':
         flags |= FLAG_PRINT_HEADER;
+        print(true, NULL, NULL);
         break;
       case 'p':
         flags |= FLAG_TAIL_PADDING;
         break;
+      case '?':
       default:
         usage(argv[0]);
     }
   }
-  if (optind == argc) {
-    fprintf(stderr, "Archive (.a) file not specified.\n");
-    usage(argv[0]);
-  }
+
+  // Get the filename of the archive.
   fname = argv[optind];
   FILE *fp = fopen(fname, "r");
-  if (!fp) {
+  if (!fp && (flags & FLAG_PRINT_HEADER))
+    exit(EXIT_SUCCESS);
+  else if (!fp) {
     fprintf(stderr, "Error opening %s: %s\n", fname, strerror(errno));
     exit(EXIT_FAILURE);
   }
 
+  // Analyze the archive.
   long bytes_to_end = 0;
   const hdr_list_t *list = parse(fp, flags, &bytes_to_end);
-  print(flags, fname, list);
+  print(false, fname, list);
   if (flags & FLAG_TAIL_PADDING)
     printf("Tail padding: %zu bytes\n", bytes_to_end);
 
