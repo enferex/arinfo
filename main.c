@@ -60,6 +60,7 @@ static void reverse_list(hdr_list_t **list) {
   *list = prev;
 }
 
+// Output each object within the archive as a comma separated value row.
 static void print(bool print_header, const char *fname, const hdr_list_t *hdr) {
   if (print_header) printf("file,object,date,uid,gid,mode,size,md5\n");
   for (const hdr_list_t *node = hdr; node; node = node->next) {
@@ -87,6 +88,7 @@ static uint64_t safe_strtou(const char *str, size_t length, unsigned base,
   return (is_u64) ? strtoull(buf, NULL, base) : strtoul(buf, NULL, base);
 }
 
+// Remove commas and truncate the string when a non-printable is discovered.
 static void sanitize(char *str, size_t length) {
   assert(str && "Invalid input.");
   for (size_t i = 0; i < length; ++i)
@@ -99,6 +101,7 @@ static void sanitize(char *str, size_t length) {
       str[i] = '?';
 }
 
+// Generate a list of the objects within an archive file.
 static hdr_list_t *parse(FILE *fp, int flags, long *bytes_to_end) {
   assert(fp && bytes_to_end && "Invalid input.");
   struct stat st;
