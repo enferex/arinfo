@@ -1,5 +1,5 @@
-arinfo: Hash and list the contents of .a files.
-===============================================
+arinfo: Hash and list the contents of an archive (.a) file.
+===========================================================
 arinfo displays information about the objects within an archive (.a) file.
 Archive files are commonly used as static libraries.  The main feature of
 arinfo is that it produces an md5 hash of the contents for the objects files
