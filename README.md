@@ -22,7 +22,9 @@ reading the .a file incorrectly.
 Caveats
 -------
 If an object's filename has unexpected/non-printable characters, then arinfo
-will only display a truncated representation of that filename.
+will only display a truncated representation of that filename.  To avoid
+issues/confusion with the arinfo csv output, commas in filenames are converted
+to a '?' character.
 
 Building
 --------
