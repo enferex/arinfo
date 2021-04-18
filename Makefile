@@ -1,7 +1,7 @@
 CFLAGS  = -Wall -pedantic -std=gnu17
 SRCS    = main.c
 OBJS   := $(SRCS:.c=.o)
-APP     = aropt
+APP     = arinfo
 
 all: debug
 

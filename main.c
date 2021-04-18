@@ -12,11 +12,15 @@
 
 #define FLAG_PRINT_HEADER 0x1
 #define FLAG_TAIL_PADDING 0x2
-
 typedef struct _hdr_list_t {
-  struct ar_hdr hdr;
-  struct _hdr_list_t *next;
+  char name[1 + sizeof(((struct ar_hdr *)0)->ar_name)];
+  uint64_t date;  // See ar.h ar_date.
+  uint32_t uid;   // See ar.h ar_uid.
+  uint32_t gid;   // See ar.h ar_gid.
+  uint32_t mode;  // See ar.h ar_mode. (octal)
+  uint64_t size;  // See ar.h ar_size. (octal)
   uint8_t md5[MD5_DIGEST_LENGTH];
+  struct _hdr_list_t *next;
 } hdr_list_t;
 
 static _Noreturn void usage(const char *execname) {
@@ -59,9 +63,8 @@ static void reverse_list(hdr_list_t **list) {
 static void print(bool print_header, const char *fname, const hdr_list_t *hdr) {
   if (print_header) printf("file,object,date,uid,gid,mode,size,md5\n");
   for (const hdr_list_t *node = hdr; node; node = node->next) {
-    printf("%s,%s,%s,%s,%s,%s,%s,", fname, node->hdr.ar_name, node->hdr.ar_date,
-           node->hdr.ar_uid, node->hdr.ar_gid, node->hdr.ar_mode,
-           node->hdr.ar_size);
+    printf("%s,%s,%lu,%u,%u,%o,%lu,", fname, node->name, node->date, node->uid,
+           node->gid, node->mode, node->size);
     for (int i = 0; i < MD5_DIGEST_LENGTH; ++i) printf("%02x", node->md5[i]);
     putc('\n', stdout);
   }
@@ -75,26 +78,25 @@ static long file_size(FILE *fp) {
   return end;
 }
 
-static void sanitize_string(char *str, size_t max) {
+static uint64_t safe_strtou(const char *str, size_t length, unsigned base,
+                            bool is_u64) {
   assert(str && "Invalid input.");
-  size_t i = 0;
-  while (i < max) {
-    if (str[i] == 0)
-      break;
-    else if (!isprint(str[i]))
-      str[i] = '?';
-    ++i;
-  }
+  char buf[32] = {0};
+  if (length >= sizeof(buf)) abort();
+  memcpy(buf, str, length);
+  return (is_u64) ? strtoull(buf, NULL, base) : strtoul(buf, NULL, base);
 }
 
-static void sanitize(struct ar_hdr *hdr) {
-  assert(hdr && "Invalid input.");
-  sanitize_string(hdr->ar_name, sizeof(hdr->ar_name));
-  sanitize_string(hdr->ar_date, sizeof(hdr->ar_date));
-  sanitize_string(hdr->ar_uid, sizeof(hdr->ar_uid));
-  sanitize_string(hdr->ar_gid, sizeof(hdr->ar_gid));
-  sanitize_string(hdr->ar_mode, sizeof(hdr->ar_mode));
-  sanitize_string(hdr->ar_size, sizeof(hdr->ar_size));
+static void sanitize(char *str, size_t length) {
+  assert(str && "Invalid input.");
+  for (size_t i = 0; i < length; ++i)
+    if (str[i] == 0)
+      break;
+    else if (!isprint(str[i])) {
+      str[i] = '\0';
+      break;
+    } else if (str[i] == ',')
+      str[i] = '?';
 }
 
 static hdr_list_t *parse(FILE *fp, int flags, long *bytes_to_end) {
@@ -119,23 +121,23 @@ static hdr_list_t *parse(FILE *fp, int flags, long *bytes_to_end) {
   struct ar_hdr hdr;
   const long end = file_size(fp);
   while (fread(&hdr, 1, sizeof(struct ar_hdr), fp) == sizeof(struct ar_hdr)) {
-    hdr.ar_name[sizeof(hdr.ar_name) - 1] = '\0';
-    hdr.ar_date[sizeof(hdr.ar_date) - 1] = '\0';
-    hdr.ar_uid[sizeof(hdr.ar_uid) - 1] = '\0';
-    hdr.ar_gid[sizeof(hdr.ar_gid) - 1] = '\0';
-    hdr.ar_mode[sizeof(hdr.ar_mode) - 1] = '\0';
-    hdr.ar_size[sizeof(hdr.ar_size) - 1] = '\0';
-    sanitize(&hdr);
     const long size = atol(hdr.ar_size);
-    hdr_list_t *hdrp = calloc(1, sizeof(hdr_list_t));
-    if (!hdrp) {
+    hdr_list_t *h = calloc(1, sizeof(hdr_list_t));
+    if (!h) {
       fprintf(stderr, "Error allocating header memory.\n");
       exit(EXIT_FAILURE);
     }
-    memcpy(&hdrp->hdr, &hdr, sizeof(struct ar_hdr));
-    copy_hash_data(hdrp->md5, fp, size);
-    hdrp->next = head;
-    head = hdrp;
+    // hdrp->name is 1 byte more than hdr.ar_name; thus, always null terminated.
+    sanitize(hdr.ar_name, sizeof(hdr.ar_name));
+    strncpy(h->name, hdr.ar_name, sizeof(h->name) - 1);
+    h->date = safe_strtou(hdr.ar_date, sizeof(hdr.ar_date), 10, true);
+    h->uid = (uint32_t)safe_strtou(hdr.ar_uid, sizeof(hdr.ar_uid), 10, false);
+    h->gid = (uint32_t)safe_strtou(hdr.ar_gid, sizeof(hdr.ar_gid), 10, false);
+    h->mode = (uint32_t)safe_strtou(hdr.ar_mode, sizeof(hdr.ar_mode), 8, false);
+    h->size = safe_strtou(hdr.ar_size, sizeof(hdr.ar_size), 10, true);
+    copy_hash_data(h->md5, fp, size);
+    h->next = head;
+    head = h;
     fseek(fp, size, SEEK_CUR);
     *bytes_to_end = end - ftell(fp);
   }
