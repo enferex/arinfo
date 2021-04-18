@@ -113,7 +113,7 @@ static hdr_list_t *parse(FILE *fp, int flags, long *bytes_to_end) {
   char magic[SARMAG] = {0};
   if ((fread(&magic, 1, SARMAG, fp) != SARMAG) ||
       (strncmp(ARMAG, magic, SARMAG) != 0)) {
-    fprintf(stderr, "Error reading magic number.\n");
+    fprintf(stderr, "Error: This is not an archive file.\n");
     exit(EXIT_FAILURE);
   }
 
