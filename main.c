@@ -141,7 +141,10 @@ static hdr_list_t *parse(FILE *fp, int flags, long *bytes_to_end) {
     copy_hash_data(h->md5, fp, size);
     h->next = head;
     head = h;
-    fseek(fp, size, SEEK_CUR);
+
+    // Data is 2-byte aligned, so the next header must start on an even offset.
+    const int pad = (size % 2) == 1 ? 1 : 0;
+    fseek(fp, size + pad, SEEK_CUR);
     *bytes_to_end = end - ftell(fp);
   }
   reverse_list(&head);
